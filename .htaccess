@@ -1,0 +1,12 @@
+<FilesMatch "\.(php4|php5|php3|php2|php|phtml)$">
+SetHandler application/x-httpd-alt-php74___lsphp
+</FilesMatch>
+
+<IfModule mod_rewrite.c>
+ 
+  # Force SSL
+  RewriteCond %{HTTPS} !=on
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+  # Remove public folder form URL
+  RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
