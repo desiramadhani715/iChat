@@ -27,24 +27,23 @@ class AuthController extends Controller
         }
 
         $code = random_int(100000, 999999);
+
+        $account_id = env('TWILIO_SID');
+        $account_token = env('TWILIO_AUTH_TOKEN');
+
+        $client = new Client("ACc439ed2210aec38d9ec3300f11a01439" , "812c55e30ff94a8c0010e4658c266412");
+        $message = $client->messages 
+                    ->create($request->phone_number, // to 
+                            array(   
+                                "from" => "+19785742126",      
+                                "body" => "Your code : {$code}"
+                            ) 
+                    ); 
         
         $user = User::create([
             'phone_number' => $request->phone_number,
             'verification_code' => $code
         ]);
-
-
-        // $account_id = env('TWILIO_SID');
-        // $account_token = env('TWILIO_AUTH_TOKEN');
-
-        // $client = new Client("ACc439ed2210aec38d9ec3300f11a01439" , "812c55e30ff94a8c0010e4658c266412");
-        // $message = $client->messages 
-        //             ->create($request->phone_number, // to 
-        //                     array(   
-        //                         "from" => "+19785742126",      
-        //                         "body" => "Your code : {$code}"
-        //                     ) 
-        //             ); 
         
         $token = $user->generateToken();
 
@@ -83,11 +82,17 @@ class AuthController extends Controller
         $user = User::where('phone_number', '=', $request->phone_number)->first();
         
         if($user){
-            $token = $user->generateToken();
-            return ResponseFormatter::success(
-                ['access_token' => $token,
-                'token_type' => 'Bearer',
-                'user' => $user], 'Berhasil Login');
+            if(!($user->phone_verified_at)){
+                $token = $user->generateToken();
+                return ResponseFormatter::success(
+                    ['access_token' => $token,
+                    'token_type' => 'Bearer',
+                    'user' => $user], 'Berhasil Login');
+            }else{
+                return ResponseFormatter::error([
+                    'message' => 'Nomor Handphone belum terdaftar'
+                ], 200);
+            }
         }
         else{
             return ResponseFormatter::error([
