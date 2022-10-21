@@ -24,6 +24,7 @@ Route::post('/login', [AuthController::class, 'login']);
 
 Route::middleware(['auth:api'])->group(function () {
     Route::post('/verify', 'AuthController@verify');
+    Route::post('/verify-pin', 'AuthController@verify_pin');
     Route::post('/change-profile', 'AuthController@change_profile');
     Route::post('/logout', [AuthController::class, 'logout']);
 });

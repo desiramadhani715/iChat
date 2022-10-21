@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use App\Models\User;
+use App\Mail\iChatMail;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\support\Str;
 use Twilio\Rest\Client;
 
@@ -16,41 +18,73 @@ class AuthController extends Controller
 {
 
     public function register(Request $request){
-        $validator = Validator::make($request->all(), [
-            'phone_number' => ['required', 'unique:users', ]
-        ]);
+        // $validator = Validator::make($request->all(), [
+        //     'phone_number' => ['unique:users'],
+        //     'email' => ['unique:users']
+        // ]);
+        
 
-        if($validator->fails()){
-            return ResponseFormatter::error([
-                'message' => 'Nomor Handphone sudah terdaftar'
-            ],'Unregistered', 200);
-        }
+        // if($validator->fails()){
+        //     return ResponseFormatter::error([
+        //         'message' => 'Email sudah terdaftar'
+        //     ],'Unregistered', 200);
+        // }
 
         $code = random_int(100000, 999999);
+        $data = [
+            'body'=> $code 
+        ];
 
-        $account_id = env('TWILIO_SID');
-        $account_token = env('TWILIO_AUTH_TOKEN');
+        Mail::to($request->email)->send(new iChatMail($data));
 
-        $client = new Client("ACc439ed2210aec38d9ec3300f11a01439" , "812c55e30ff94a8c0010e4658c266412");
-        $message = $client->messages 
-                    ->create($request->phone_number, // to 
-                            array(   
-                                "from" => "+19785742126",      
-                                "body" => "Your code : {$code}"
-                            ) 
-                    ); 
+        $user = User::where('email',$request->email)->first();
+        if($user){
+            if($user->code_verified_at != null){
+                return ResponseFormatter::error([
+                    'message' => 'Email sudah terdaftar'
+                ],'Unregistered', 200);
+            }else{
+                User::where('id',$user->id)->update([
+                    'verification_code' => $code,
+                ]);
+            }
+        }else{
+            $user = User::create([
+                'phone_number' => $request->phone_number,
+                'email' => $request->email,
+                'verification_code' => $code
+            ]);
+        }
+
+
+        // $account_id = env('TWILIO_SID');
+        // $account_token = env('TWILIO_AUTH_TOKEN');
+
+        // $client = new Client("ACc439ed2210aec38d9ec3300f11a01439" , "812c55e30ff94a8c0010e4658c266412");
+        // $message = $client->messages 
+        //             ->create($request->phone_number, // to 
+        //                     array(   
+        //                         "from" => "+19785742126",      
+        //                         "body" => "Your code : {$code}"
+        //                     ) 
+        //             ); 
+
         
-        $user = User::create([
-            'phone_number' => $request->phone_number,
-            'verification_code' => $code
-        ]);
         
         $token = $user->generateToken();
+
+        $msg = '';
+        if($request->email != null){
+           $msg = 'Email berhasil terdaftar'; 
+        }
+        if($request->phone_number != null){
+            $msg = 'Nomor berhasil terdaftar';
+        }
 
         return ResponseFormatter::success(
             ['access_token' => $token,
             'token_type' => 'Bearer',
-            'verification_code' => $code], 'Nomor berhasil terdaftar');
+            'verification_code' => $code], $msg);
     }
     
     public function verify(Request $request){
@@ -58,10 +92,10 @@ class AuthController extends Controller
         if($request->verification_code == Auth::user()->verification_code){
             
             $user = Auth::user();
-            $user->phone_verified_at = now();
+            $user->code_verified_at = now();
             $user->save();
 
-            return ResponseFormatter::success(null, 'Nomor berhasil di verifikasi');
+            return ResponseFormatter::success(null, 'Email berhasil di verifikasi');
             
         }else{
             
@@ -75,29 +109,58 @@ class AuthController extends Controller
     {
         // return $request;
         
-        $this->validate($request, [
-            'phone_number' => 'required',
-        ]);
+        // $this->validate($request, [
+        //     'phone_number' => 'required',
+        // ]);
 
-        $user = User::where('phone_number', '=', $request->phone_number)->first();
+        // $user = User::where('phone_number', '=', $request->phone_number)->first();
         
-        if($user){
-            if(!($user->phone_verified_at)){
-                $token = $user->generateToken();
-                return ResponseFormatter::success(
-                    ['access_token' => $token,
-                    'token_type' => 'Bearer',
-                    'user' => $user], 'Berhasil Login');
-            }else{
-                return ResponseFormatter::error([
-                    'message' => 'Nomor Handphone belum terdaftar'
-                ], 200);
-            }
+        $user = User::where('email', '=', $request->email)
+                    ->where('code_verified_at','!=', null)
+                    ->get();
+
+        if(count($user) > 0){
+            $user = User::find($user[0]->id);
+            $code = random_int(100000, 999999);
+            $data = [
+                'body'=> $code 
+            ];
+
+            Mail::to($request->email)->send(new iChatMail($data));
+
+            User::where('id',$user->id)->update([
+                'login_pin' => $code
+            ]);
+
+            $user = User::find($user->id);
+
+            $token = $user->generateToken();
+            return ResponseFormatter::success(
+                ['access_token' => $token,
+                'token_type' => 'Bearer',
+                'pin' => $code], 'Berhasil Login');
         }
         else{
             return ResponseFormatter::error([
-                'message' => 'Nomor Handphone belum terdaftar'
+                'message' => 'Email belum terdaftar'
             ], 200);
+        }
+    }
+    public function verify_pin(Request $request){
+        
+        if($request->login_pin == Auth::user()->login_pin){
+            
+            $user = Auth::user();
+            $user->pin_verified_at = now();
+            $user->save();
+
+            return ResponseFormatter::success(['user' => Auth::user()], 'Login Berhasil');
+            
+        }else{
+            
+            return ResponseFormatter::error([
+                'message' => 'Unauthorized'
+            ],'Authentication Failed', 500);
         }
     }
 
